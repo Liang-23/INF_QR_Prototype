@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Magic QR Refresh</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f4f8;
+      padding: 30px 20px;
+      color: #333;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      color: #2c3e50;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    /* ---- Main QR card ---- */
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px 20px;
+      max-width: 380px;
+      margin: 0 auto 20px auto;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.09);
+    }
+
+    .qr-image {
+      width: 320px;
+      height: 320px;
+      display: block;
+      margin: 0 auto 18px auto;
+      border-radius: 8px;
+    }
+
+    .info-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      color: #aaa;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+
+    .info-value {
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: #2c3e50;
+      margin-bottom: 4px;
+      word-break: break-all;
+    }
+
+    .url-value {
+      font-size: 0.85rem;
+      color: #3498db;
+      margin-bottom: 22px;
+      word-break: break-all;
+    }
+
+    /* ---- Buttons ---- */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      text-decoration: none;
+      text-align: center;
+      margin-bottom: 10px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-refresh   { background: #2ecc71; color: #fff; }
+    .btn-dashboard { background: #3498db; color: #fff; }
+
+    /* ---- Candidates table ---- */
+    .candidates-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 18px 16px;
+      max-width: 380px;
+      margin: 0 auto 20px auto;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.09);
+      text-align: left;
+    }
+
+    .candidates-card h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      color: #aaa;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    th {
+      text-align: left;
+      color: #999;
+      font-weight: normal;
+      padding: 4px 6px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    td {
+      padding: 6px 6px;
+      border-bottom: 1px solid #f8f8f8;
+      word-break: break-all;
+    }
+
+    /* Highlight the row whose IP was chosen */
+    tr.best td { font-weight: bold; color: #27ae60; }
+
+    .no-candidates {
+      font-size: 0.82rem;
+      color: #e74c3c;
+      text-align: center;
+      padding: 8px 0;
+    }
+
+    /* ---- Hint ---- */
+    .hint {
+      font-size: 0.78rem;
+      color: #aaa;
+      margin-top: 4px;
+      line-height: 1.6;
+      max-width: 380px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Magic QR Refresh</h1>
+  <p class="subtitle">Scan this QR code with your phone to open the live dashboard.</p>
+
+  <div class="card">
+    <!--
+      /qr.png regenerates the QR code in memory from the current best IP.
+      The timestamp in the URL (?t=...) prevents the browser from using a
+      cached version — every refresh gets a brand-new image.
+    -->
+    <img class="qr-image"
+         src="/qr.png?t={{ now }}"
+         alt="Dashboard QR Code">
+
+    <div class="info-label">Best detected laptop IP</div>
+    <div class="info-value">{{ best_ip }}</div>
+
+    <div class="info-label">Encoded dashboard URL</div>
+    <div class="url-value">{{ dashboard_url }}</div>
+
+    <!--
+      /refresh-qr redirects back to /qr, which re-runs get_best_local_ipv4()
+      and reloads /qr.png — so clicking this button always shows the latest IP.
+    -->
+    <a class="btn btn-refresh"   href="/refresh-qr">↻ Refresh QR Code</a>
+    <a class="btn btn-dashboard" href="/">← Back to Dashboard</a>
+  </div>
+
+  <!-- All candidate IPs found on this machine, for transparency -->
+  <div class="candidates-card">
+    <h2>All detected network adapters</h2>
+    {% if candidates %}
+    <table>
+      <tr>
+        <th>Adapter</th>
+        <th>IPv4 address</th>
+      </tr>
+      {% for c in candidates %}
+      <tr {% if c.ip == best_ip %}class="best"{% endif %}>
+        <td>{{ c.adapter }}</td>
+        <td>{{ c.ip }} {% if c.ip == best_ip %}✓{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="no-candidates">
+      No valid network adapters found.<br>
+      Make sure the laptop is connected to Wi-Fi or a hotspot.
+    </p>
+    {% endif %}
+  </div>
+
+  <p class="hint">
+    If the QR code does not open on the phone, verify that the
+    <strong>Encoded dashboard URL</strong> above matches the address that
+    works when you type it manually in the phone browser.<br><br>
+    Make sure the phone and laptop are on the <strong>same Wi-Fi or hotspot</strong>.
+    Then click <strong>Refresh QR Code</strong> to re-detect the current IP.
+  </p>
+
+</body>
+</html>

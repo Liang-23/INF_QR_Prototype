@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Environmental Monitor</title>
+  <style>
+    /* ---------------------------------------------------------
+       Page reset + base typography
+       --------------------------------------------------------- */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: #f2f2f7;
+      min-height: 100vh;
+      padding: 22px 14px 32px;
+      color: #1c1c1e;
+    }
+
+    /* ---------------------------------------------------------
+       Page header
+       --------------------------------------------------------- */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 520px;
+      margin: 0 auto 6px;
+    }
+
+    .header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .refresh-btn {
+      background: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 38px; height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      color: #3a7bd5;
+    }
+
+    .refresh-btn svg {
+      width: 18px; height: 18px;
+      transition: transform 0.5s ease;
+    }
+
+    .refresh-btn.spinning svg { transform: rotate(360deg); }
+
+    /* Sub-header: device id + live status */
+    .sub-header {
+      max-width: 520px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: #8e8e93;
+    }
+
+    .live-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #34c759;
+    }
+    .live-dot.waiting { background: #ff9500; }
+
+    /* ---------------------------------------------------------
+       Section wrapper — each labelled block sits inside this
+       --------------------------------------------------------- */
+    .section {
+      max-width: 520px;
+      margin: 0 auto 18px;
+    }
+
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+      color: #8e8e93;
+      padding: 0 4px 6px;
+    }
+
+    /* ---------------------------------------------------------
+       Section A — three sensor cards in a row
+       --------------------------------------------------------- */
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .sensor-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 14px 10px 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      text-align: center;
+    }
+
+    .sensor-card .label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #8e8e93;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 5px;
+    }
+
+    .sensor-card .value {
+      font-size: 1.55rem;
+      font-weight: 700;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+
+    .sensor-card .unit {
+      font-size: 0.78rem;
+      color: #8e8e93;
+      font-weight: 500;
+      margin-left: 1px;
+    }
+
+    /* ---------------------------------------------------------
+       Sections B & C — wide info cards (one card per section)
+       --------------------------------------------------------- */
+    .info-card {
+      background: #fff;
+      border-radius: 18px;
+      padding: 16px 16px 14px;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.07);
+    }
+
+    /* Make the ML card visually distinct from the rule card. */
+    .info-card.ml-card {
+      background: linear-gradient(135deg, #f4f0ff 0%, #ffffff 70%);
+      border: 1px solid #e3dafd;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 7px 0;
+      font-size: 0.92rem;
+      border-bottom: 1px solid #f2f2f7;
+    }
+    .info-row:last-child { border-bottom: none; }
+
+    .info-row .key {
+      color: #8e8e93;
+      flex-shrink: 0;
+      font-weight: 500;
+    }
+
+    .info-row .val {
+      color: #1c1c1e;
+      font-weight: 600;
+      text-align: right;
+      word-break: break-word;
+    }
+
+    /* ---------------------------------------------------------
+       Status / label badges
+       --------------------------------------------------------- */
+    .badge {
+      display: inline-block;
+      border-radius: 12px;
+      padding: 3px 10px;
+      font-size: 0.80rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .badge.normal  { background: #e6f7ec; color: #34c759; }
+    .badge.warning { background: #fff1e0; color: #ff9500; }
+    .badge.ml      { background: #efe9ff; color: #5856d6; }
+
+    /* ---------------------------------------------------------
+       Note line under ML card
+       --------------------------------------------------------- */
+    .ml-note {
+      font-size: 0.78rem;
+      color: #8e8e93;
+      line-height: 1.4;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed #e3dafd;
+    }
+
+    /* ---------------------------------------------------------
+       Comparison bar
+       --------------------------------------------------------- */
+    .compare-bar {
+      max-width: 520px;
+      margin: 0 auto 18px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .compare-bar.match    { background: #e6f7ec; color: #34c759; }
+    .compare-bar.mismatch { background: #ffeaea; color: #ff3b30; }
+
+    /* ---------------------------------------------------------
+       Section D — system information (small text)
+       --------------------------------------------------------- */
+    .system-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 0.82rem;
+      color: #555;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .system-card .info-row .key { font-weight: 500; }
+    .system-card .info-row .val { font-weight: 500; color: #1c1c1e; }
+
+    /* ---------------------------------------------------------
+       QR button
+       --------------------------------------------------------- */
+    .qr-link {
+      display: block;
+      text-align: center;
+      max-width: 520px;
+      margin: 18px auto 0;
+      padding: 13px;
+      background: #3a7bd5;
+      color: #fff;
+      border-radius: 14px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.92rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Page Header -->
+  <div class="header">
+    <h1>Environmental Monitor</h1>
+    <button class="refresh-btn" id="refresh-btn" title="Refresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Live status sub-header -->
+  <div class="sub-header">
+    <span class="live-dot waiting" id="live-dot"></span>
+    <span id="data-source-status">Waiting for sensor data</span>
+  </div>
+
+  <!-- ====================================================== -->
+  <!-- Section A — Live Sensor Readings                       -->
+  <!-- ====================================================== -->
+  <div class="section">
+    <div class="section-title">A · Live Sensor Readings</div>
+    <div class="sensor-grid">
+      <div class="sensor-card">
+        <div class="label">Temperature</div>
+        <div class="value"><span id="temperature">—</span><span class="unit">°C</span></div>
+      </div>
+      <div class="sensor-card">
+        <div class="label">Humidity</div>
+        <div class="value"><span id="humidity">—</span><span class="unit">%</span></div>
+      </div>
+      <div class="sensor-card">
+        <div class="label">Light</div>
+        <div class="value"><span id="light">—</span><span class="unit">lux</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================== -->
+  <!-- Section B — Rule-Based Environmental Decision           -->
+  <!-- ====================================================== -->
+  <div class="section">
+    <div class="section-title">B · Rule-Based Decision</div>
+    <div class="info-card">
+      <div class="info-row">
+        <span class="key">Rule Status</span>
+        <span class="val"><span class="badge normal" id="rule-status">—</span></span>
+      </div>
+      <div class="info-row">
+        <span class="key">Main Issue</span>
+        <span class="val" id="main-issue">—</span>
+      </div>
+      <div class="info-row">
+        <span class="key">Suggestion</span>
+        <span class="val" id="suggestion">—</span>
+      </div>
+      <div class="info-row">
+        <span class="key">LED Action</span>
+        <span class="val" id="led-action">—</span>
+      </div>
+      <div class="info-row">
+        <span class="key">Comfort Level</span>
+        <span class="val" id="comfort-level">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================== -->
+  <!-- Section C — Machine Learning Prediction (highlighted)   -->
+  <!-- ====================================================== -->
+  <div class="section">
+    <div class="section-title">C · Machine Learning Prediction</div>
+    <div class="info-card ml-card">
+      <div class="info-row">
+        <span class="key">ML Label</span>
+        <span class="val"><span class="badge ml" id="ml-label">—</span></span>
+      </div>
+      <div class="info-row">
+        <span class="key">ML Status</span>
+        <span class="val"><span class="badge normal" id="ml-status">—</span></span>
+      </div>
+      <div class="info-row">
+        <span class="key">ML Suggestion</span>
+        <span class="val" id="ml-suggestion">—</span>
+      </div>
+      <p class="ml-note">
+        The ML model uses <b>temperature</b>, <b>humidity</b>, and <b>light</b>
+        to predict the environmental condition.
+      </p>
+    </div>
+  </div>
+
+  <!-- Rule vs ML comparison bar -->
+  <div class="compare-bar match" id="compare-bar">Rule and ML Result: —</div>
+
+  <!-- ====================================================== -->
+  <!-- Section D — System Information                          -->
+  <!-- ====================================================== -->
+  <div class="section">
+    <div class="section-title">D · System Information</div>
+    <div class="system-card">
+      <div class="info-row">
+        <span class="key">Device ID</span>
+        <span class="val" id="device-id">—</span>
+      </div>
+      <div class="info-row">
+        <span class="key">Last Update</span>
+        <span class="val" id="last-update">—</span>
+      </div>
+      <div class="info-row">
+        <span class="key">Data Source</span>
+        <span class="val" id="data-source-status-line">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Code Button -->
+  <a class="qr-link" href="/qr">&#x1F4F1; Show QR Code</a>
+
+  <script>
+    // ===================================================
+    // Helper: choose badge colour for status text.
+    // ===================================================
+    function setStatusBadge(elementId, statusText) {
+      var el = document.getElementById(elementId);
+      if (!el) return;
+      el.textContent = statusText || '—';
+      el.className   = 'badge ' + (statusText === 'Normal' ? 'normal' : 'warning');
+    }
+
+    // ===================================================
+    // Helper: decide if rule-based and ML results agree.
+    //
+    // Match rules:
+    //  - status="Normal"        + ml_label="comfortable"  → match
+    //  - main_issue contains "Light too low"      + ml_label="too_dark"   → match
+    //  - main_issue contains "Light too high"     + ml_label="too_bright" → match
+    //  - main_issue contains "Temperature too high" + ml_label="too_hot"  → match
+    //  - main_issue contains "Temperature too low"  + ml_label="too_cold" → match
+    //  - main_issue contains "Humidity too high"  + ml_label="too_humid"  → match
+    //  - main_issue contains "Humidity too low"   + ml_label="too_dry"    → match
+    //  - anything else → mismatch
+    // ===================================================
+    function isMatched(ruleStatus, mainIssue, mlLabel) {
+      if (ruleStatus === 'Normal' && mlLabel === 'comfortable') return true;
+
+      var labelToKeyword = {
+        'too_hot':    'Temperature too high',
+        'too_cold':   'Temperature too low',
+        'too_humid':  'Humidity too high',
+        'too_dry':    'Humidity too low',
+        'too_dark':   'Light too low',
+        'too_bright': 'Light too high',
+      };
+
+      var keyword = labelToKeyword[mlLabel];
+      if (keyword && mainIssue && mainIssue.indexOf(keyword) !== -1) return true;
+      return false;
+    }
+
+    // ===================================================
+    // Main updater: fetch /data and refresh every section.
+    // ===================================================
+    function updateDashboard() {
+      fetch('/data')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          // -------- Section A: Live Sensor Readings --------
+          var temp  = parseFloat(data.temperature);
+          var hum   = parseFloat(data.humidity);
+          var light = parseFloat(data.light);
+
+          document.getElementById('temperature').textContent =
+            isNaN(temp)  ? '—' : temp.toFixed(1);
+          document.getElementById('humidity').textContent =
+            isNaN(hum)   ? '—' : Math.round(hum);
+          document.getElementById('light').textContent =
+            isNaN(light) ? '—' : Math.round(light);
+
+          // -------- Section B: Rule-Based Decision --------
+          setStatusBadge('rule-status', data.status);
+          document.getElementById('main-issue').textContent    = data.main_issue    || '—';
+          document.getElementById('suggestion').textContent    = data.suggestion    || '—';
+          document.getElementById('led-action').textContent    = data.led_action    || '—';
+          document.getElementById('comfort-level').textContent = data.comfort_level || '—';
+
+          // -------- Section C: ML Prediction --------
+          // ML label badge (always purple).
+          var mlLabelEl = document.getElementById('ml-label');
+          mlLabelEl.textContent = data.ml_label || '—';
+          mlLabelEl.className   = 'badge ml';
+
+          // ML status badge (green if Normal, orange if Warning).
+          setStatusBadge('ml-status', data.ml_status);
+
+          document.getElementById('ml-suggestion').textContent = data.ml_suggestion || '—';
+
+          // -------- Comparison bar --------
+          var matched = isMatched(data.status, data.main_issue, data.ml_label);
+          var bar     = document.getElementById('compare-bar');
+          if (matched) {
+            bar.className   = 'compare-bar match';
+            bar.textContent = 'Rule and ML Result: Matched';
+          } else {
+            bar.className   = 'compare-bar mismatch';
+            bar.textContent = 'Rule and ML Result: Different, please check manually';
+          }
+
+          // -------- Section D: System Information --------
+          document.getElementById('device-id').textContent     = data.device_id   || '—';
+          document.getElementById('last-update').textContent   = data.last_update || '—';
+          document.getElementById('data-source-status-line').textContent =
+            data.data_source_status || '—';
+
+          // -------- Sub-header live dot --------
+          var isLive = (data.data_source_status === 'Live sensor data');
+          document.getElementById('live-dot').className =
+            'live-dot' + (isLive ? '' : ' waiting');
+          document.getElementById('data-source-status').textContent =
+            data.data_source_status || 'Waiting for sensor data';
+        })
+        .catch(function() {
+          document.getElementById('data-source-status').textContent = 'Cannot reach server';
+          document.getElementById('live-dot').className = 'live-dot waiting';
+        });
+    }
+
+    // ===================================================
+    // Manual refresh button
+    // ===================================================
+    document.getElementById('refresh-btn').addEventListener('click', function() {
+      var btn = this;
+      btn.classList.add('spinning');
+      setTimeout(function() { btn.classList.remove('spinning'); }, 520);
+      updateDashboard();
+    });
+
+    // ===================================================
+    // Auto-refresh every 2 seconds
+    // ===================================================
+    updateDashboard();
+    setInterval(updateDashboard, 2000);
+  </script>
+
+</body>
+</html>
