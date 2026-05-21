@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Environmental Data Trends</title>
+  <style>
+    /* =========================================================
+       Reset + base
+       ========================================================= */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: #f2f2f7;
+      min-height: 100vh;
+      color: #1c1c1e;
+    }
+
+    /* =========================================================
+       Page header — white bar across the top
+       ========================================================= */
+    .page-header {
+      background: #fff;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #e5e5ea;
+      margin-bottom: 18px;
+    }
+
+    .header-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .header-text .page-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .header-text .page-subtitle {
+      font-size: 0.74rem;
+      color: #8e8e93;
+      margin-top: 3px;
+      line-height: 1.4;
+    }
+
+    /* Status badge — Live (green) or Waiting (orange) */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 10px;
+      margin-top: 7px;
+    }
+    .status-badge.live    { background: #e6f7ec; color: #34c759; }
+    .status-badge.waiting { background: #fff1e0; color: #ff9500; }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Navigation buttons — Back + QR */
+    .header-nav {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      padding-top: 2px;
+    }
+
+    .nav-btn {
+      text-decoration: none;
+      font-size: 0.80rem;
+      font-weight: 600;
+      padding: 7px 13px;
+      border-radius: 10px;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .nav-btn.back { background: #3a7bd5; }
+    .nav-btn.qr   { background: #34c759; }
+
+    /* =========================================================
+       Main card grid
+       One column on phone, two on tablet, three on laptop.
+       ========================================================= */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 14px 32px;
+    }
+
+    @media (min-width: 600px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (min-width: 900px) {
+      .grid { grid-template-columns: 1fr 1fr 1fr; }
+    }
+
+    /* =========================================================
+       Cards — shared base style
+       ========================================================= */
+    .card {
+      background: #fff;
+      border-radius: 18px;
+      padding: 16px 16px 14px;
+      box-shadow: 0 2px 14px rgba(0, 0, 0, 0.07);
+    }
+
+    /* Small section label above each card */
+    .card-title {
+      font-size: 0.70rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+      color: #8e8e93;
+      margin-bottom: 8px;
+    }
+
+    /* Large current value number */
+    .card-value {
+      font-size: 2.1rem;
+      font-weight: 700;
+      letter-spacing: -1px;
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+
+    .card-unit {
+      font-size: 0.88rem;
+      color: #8e8e93;
+      font-weight: 500;
+      margin-left: 2px;
+    }
+
+    /* =========================================================
+       Cards 1-3 — line chart
+       canvas draws at 600x80 internally; CSS scales it to fill.
+       ========================================================= */
+    .chart-canvas {
+      display: block;
+      width: 100%;
+      height: 80px;
+      border-radius: 8px;
+    }
+
+    /* Shown instead of the canvas while history is empty */
+    .chart-waiting {
+      font-size: 0.78rem;
+      color: #aaa;
+      text-align: center;
+      padding: 22px 0;
+      display: none;   /* JS toggles this */
+    }
+
+    /* =========================================================
+       Card 4 — LED Matrix
+       ========================================================= */
+    .matrix-icon-label {
+      text-align: center;
+      font-size: 1.0rem;
+      font-weight: 700;
+      color: #1c1c1e;
+      margin-bottom: 10px;
+    }
+
+    /* 8×8 dot grid centred in the card */
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 5px;
+      max-width: 256px;     /* 8 columns × ~27 px each + gaps */
+      margin: 0 auto 10px;
+    }
+
+    /* Each dot is a circle */
+    .dot {
+      aspect-ratio: 1;
+      border-radius: 50%;   /* circle */
+      background: #e0e0e5;  /* OFF — pale grey */
+    }
+
+    /* Active dot — grass bright green with soft glow */
+    .dot.on {
+      background: #32d74b;
+      box-shadow: 0 0 6px rgba(50, 215, 75, 0.65);
+    }
+
+    .matrix-note {
+      text-align: center;
+      font-size: 0.72rem;
+      color: #8e8e93;
+      line-height: 1.5;
+    }
+
+    /* =========================================================
+       Card 5 — ML Prediction
+       ========================================================= */
+    .card.ml-card {
+      background: linear-gradient(135deg, #f4f0ff 0%, #ffffff 70%);
+      border: 1px solid #e3dafd;
+    }
+
+    .ml-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 7px 0;
+      font-size: 0.90rem;
+      border-bottom: 1px solid #f2f2f7;
+    }
+    .ml-row:last-child { border-bottom: none; }
+
+    .ml-key {
+      color: #8e8e93;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+
+    .ml-val {
+      color: #1c1c1e;
+      font-weight: 600;
+      text-align: right;
+      word-break: break-word;
+    }
+
+    /* Badges (Normal = green, Warning = orange, ML label = purple) */
+    .badge {
+      display: inline-block;
+      border-radius: 10px;
+      padding: 2px 9px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .badge.normal  { background: #e6f7ec; color: #34c759; }
+    .badge.warning { background: #fff1e0; color: #ff9500; }
+    .badge.ml      { background: #efe9ff; color: #5856d6; }
+
+    /* Rule vs ML comparison strip inside Card 5 */
+    .compare-strip {
+      margin-top: 12px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 0.84rem;
+      font-weight: 600;
+      text-align: center;
+    }
+    .compare-strip.match    { background: #e6f7ec; color: #34c759; }
+    .compare-strip.mismatch { background: #ffeaea; color: #ff3b30; }
+    .compare-strip.pending  { background: #f2f2f7; color: #8e8e93; }
+
+    /* Small italic note below ML card */
+    .ml-note {
+      font-size: 0.74rem;
+      color: #8e8e93;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed #e3dafd;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       Page header
+       ============================================================ -->
+  <div class="page-header">
+    <div class="header-inner">
+
+      <div class="header-text">
+        <div class="page-title">Environmental Data Trends</div>
+        <div class="page-subtitle">Live history from Arduino Serial + Flask CSV logger</div>
+        <span class="status-badge waiting" id="status-badge">
+          <span class="status-dot"></span>
+          <span id="status-text">Waiting</span>
+        </span>
+      </div>
+
+      <div class="header-nav">
+        <a class="nav-btn back" href="/">&#8592; Back</a>
+        <a class="nav-btn qr"   href="/qr">&#x1F4F1; QR</a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Five cards
+       ============================================================ -->
+  <div class="grid">
+
+    <!-- ---- Card 1: Temperature Trend ---- -->
+    <div class="card">
+      <div class="card-title">Temperature Trend</div>
+      <div class="card-value">
+        <span id="temp-value">&#8212;</span><span class="card-unit">°C</span>
+      </div>
+      <!-- canvas internal size is 600×80; CSS scales it to fill the card -->
+      <canvas class="chart-canvas" id="chart-temp" width="600" height="80"></canvas>
+      <div class="chart-waiting" id="chart-temp-wait">Waiting for history data...</div>
+    </div>
+
+    <!-- ---- Card 2: Humidity Trend ---- -->
+    <div class="card">
+      <div class="card-title">Humidity Trend</div>
+      <div class="card-value">
+        <span id="hum-value">&#8212;</span><span class="card-unit">%</span>
+      </div>
+      <canvas class="chart-canvas" id="chart-hum" width="600" height="80"></canvas>
+      <div class="chart-waiting" id="chart-hum-wait">Waiting for history data...</div>
+    </div>
+
+    <!-- ---- Card 3: Light Intensity Trend ---- -->
+    <div class="card">
+      <div class="card-title">Light Intensity Trend</div>
+      <div class="card-value">
+        <span id="light-value">&#8212;</span><span class="card-unit">ADC</span>
+      </div>
+      <canvas class="chart-canvas" id="chart-light" width="600" height="80"></canvas>
+      <div class="chart-waiting" id="chart-light-wait">Waiting for history data...</div>
+    </div>
+
+    <!-- ---- Card 4: LED Matrix Status ---- -->
+    <div class="card">
+      <div class="card-title">LED Matrix Status</div>
+      <div class="matrix-icon-label" id="matrix-label">Smile &#128522;</div>
+      <!-- 64 dots built by JS below -->
+      <div class="matrix-grid" id="matrix-grid"></div>
+      <div class="matrix-note">
+        This mirrors the local 8&#xD7;8 LED matrix feedback.
+      </div>
+    </div>
+
+    <!-- ---- Card 5: ML Prediction ---- -->
+    <div class="card ml-card">
+      <div class="card-title">Machine Learning Prediction</div>
+
+      <div class="ml-row">
+        <span class="ml-key">ML Label</span>
+        <span class="ml-val"><span class="badge ml" id="ml-label">&#8212;</span></span>
+      </div>
+      <div class="ml-row">
+        <span class="ml-key">ML Status</span>
+        <span class="ml-val"><span class="badge normal" id="ml-status">&#8212;</span></span>
+      </div>
+      <div class="ml-row">
+        <span class="ml-key">Suggestion</span>
+        <span class="ml-val" id="ml-suggestion">&#8212;</span>
+      </div>
+
+      <div class="compare-strip pending" id="compare-strip">
+        Rule vs ML: Waiting...
+      </div>
+
+      <p class="ml-note">
+        The ML model uses <b>temperature</b>, <b>humidity</b>, and <b>light</b>
+        to predict the environment condition. The strip above compares it against
+        the rule-based engine — green means they agree.
+      </p>
+    </div>
+
+  </div><!-- /.grid -->
+
+
+  <script>
+    // ================================================================
+    // SECTION 1 — LED Matrix icon point arrays
+    //
+    // These are exact copies of the arrays in sensor_reader.ino.
+    // Each entry is [x, y] — x is column (0=left), y is row (0=top).
+    // Priority order: rain → moon → sun → smile  (same as firmware).
+    // ================================================================
+
+    var ICONS = {
+      rain: [
+        [2,1],[3,1],[4,1],
+        [1,2],[5,2],
+        [0,3],[6,3],
+        [0,4],[6,4],
+        [1,5],[2,5],[3,5],[4,5],[5,5],
+        [1,6],[3,6],[5,6],
+        [1,7],[3,7],[5,7]
+      ],
+      moon: [
+        [3,1],
+        [2,2],
+        [1,3],[2,3],
+        [1,4],[2,4],
+        [1,5],[2,5],[3,5],
+        [2,6],[3,6],[4,6],[5,6]
+      ],
+      sun: [
+        [3,1],
+        [1,2],[3,2],[5,2],
+        [2,3],[3,3],[4,3],
+        [0,4],[2,4],[3,4],[4,4],[6,4],
+        [2,5],[3,5],[4,5],
+        [1,6],[3,6],[5,6],
+        [3,7]
+      ],
+      smile: [
+        [2,1],[3,1],[4,1],
+        [1,2],[5,2],
+        [0,3],[2,3],[4,3],[6,3],
+        [0,4],[2,4],[4,4],[6,4],
+        [0,5],[2,5],[4,5],[6,5],
+        [1,6],[5,6],
+        [2,7],[3,7],[4,7]
+      ]
+    };
+
+    // Human-readable labels shown above the matrix grid
+    var ICON_LABELS = {
+      rain:  'Rain 🌧',
+      moon:  'Moon 🌙',
+      sun:   'Sun ☀',
+      smile: 'Smile 😊'
+    };
+
+    // ================================================================
+    // SECTION 2 — getMatrixIconName
+    //
+    // Decides which icon to show based on the live /data response.
+    // Accepts the full data object so the caller only needs one call.
+    //
+    // Priority order matches the Arduino firmware exactly:
+    //   1. Rain  — humidity > 70
+    //   2. Moon  — light < 150
+    //   3. Sun   — light > 850
+    //   4. Smile — all normal
+    // ================================================================
+    function getMatrixIconName(data) {
+      var humidity = Number(data.humidity);
+      var light    = Number(data.light);
+
+      if (humidity > 70)  return 'rain';
+      if (light    < 150) return 'moon';
+      if (light    > 850) return 'sun';
+      return 'smile';
+    }
+
+    // ================================================================
+    // SECTION 3 — Build the 8×8 dot grid
+    //
+    // Creates 64 <div class="dot"> elements with id "dot-ROW-COL".
+    // Runs once at page load.
+    // ================================================================
+    (function buildMatrixGrid() {
+      var container = document.getElementById('matrix-grid');
+      // We iterate row by row (y), then column (x), so the flat index
+      // matches y*8 + x.
+      for (var y = 0; y < 8; y++) {
+        for (var x = 0; x < 8; x++) {
+          var dot = document.createElement('div');
+          dot.className = 'dot';
+          dot.id = 'dot-' + y + '-' + x;
+          container.appendChild(dot);
+        }
+      }
+    })();
+
+    // ================================================================
+    // SECTION 4 — updateMatrix
+    //
+    // Lights up the correct dots for the chosen icon and updates
+    // the label text above the grid.
+    // ================================================================
+    function updateMatrix(iconName) {
+      // 1. Turn all dots off first.
+      for (var y = 0; y < 8; y++) {
+        for (var x = 0; x < 8; x++) {
+          document.getElementById('dot-' + y + '-' + x).className = 'dot';
+        }
+      }
+
+      // 2. Light up the dots in this icon's point list.
+      //    Each entry is [x, y] — x is column, y is row.
+      var points = ICONS[iconName] || ICONS.smile;
+      for (var i = 0; i < points.length; i++) {
+        var px = points[i][0];   // column
+        var py = points[i][1];   // row
+        var el = document.getElementById('dot-' + py + '-' + px);
+        if (el) {
+          el.className = 'dot on';
+        }
+      }
+
+      // 3. Update the label above the grid.
+      document.getElementById('matrix-label').textContent =
+        ICON_LABELS[iconName] || ICON_LABELS.smile;
+    }
+
+    // ================================================================
+    // SECTION 5 — drawChart
+    //
+    // Draws a simple filled line chart onto a <canvas> element.
+    // No external libraries — just plain canvas 2D API.
+    //
+    // canvasId — id of the canvas element
+    // waitId   — id of the "Waiting..." text to show/hide
+    // values   — array of numbers, oldest first
+    // color    — CSS colour string e.g. '#ff3b30'
+    // ================================================================
+    function drawChart(canvasId, waitId, values, color) {
+      var canvas = document.getElementById(canvasId);
+      var wait   = document.getElementById(waitId);
+
+      // Need at least 2 points to draw a line.
+      if (!values || values.length < 2) {
+        canvas.style.display = 'none';
+        wait.style.display   = 'block';
+        return;
+      }
+
+      // Data is present — show canvas, hide waiting text.
+      canvas.style.display = 'block';
+      wait.style.display   = 'none';
+
+      var ctx = canvas.getContext('2d');
+      var W   = canvas.width;    // 600 (set in HTML attribute)
+      var H   = canvas.height;   // 80  (set in HTML attribute)
+
+      // Clear previous frame.
+      ctx.clearRect(0, 0, W, H);
+
+      // ---- Find min and max of the data series ----
+      var minVal = values[0];
+      var maxVal = values[0];
+      for (var i = 1; i < values.length; i++) {
+        if (values[i] < minVal) minVal = values[i];
+        if (values[i] > maxVal) maxVal = values[i];
+      }
+      // If all values are identical, avoid dividing by zero.
+      var range = maxVal - minVal;
+      if (range === 0) range = 1;
+
+      // Drawing margins (pixels inside the canvas).
+      var padT = 8;    // top
+      var padB = 8;    // bottom
+      var padL = 6;    // left
+      var padR = 6;    // right
+
+      // ---- Helper: value → canvas Y (higher value = higher on canvas = lower Y) ----
+      function toY(v) {
+        return padT + (1 - (v - minVal) / range) * (H - padT - padB);
+      }
+
+      // ---- Helper: index → canvas X (left to right) ----
+      function toX(i) {
+        return padL + (i / (values.length - 1)) * (W - padL - padR);
+      }
+
+      // ---- Draw filled area under the line ----
+      ctx.beginPath();
+      ctx.moveTo(toX(0), H - padB);                 // start at bottom-left
+      ctx.lineTo(toX(0), toY(values[0]));            // up to first data point
+      for (var j = 1; j < values.length; j++) {
+        ctx.lineTo(toX(j), toY(values[j]));
+      }
+      ctx.lineTo(toX(values.length - 1), H - padB); // down to bottom-right
+      ctx.closePath();
+      ctx.fillStyle   = color;
+      ctx.globalAlpha = 0.12;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // ---- Draw the line ----
+      ctx.beginPath();
+      ctx.moveTo(toX(0), toY(values[0]));
+      for (var k = 1; k < values.length; k++) {
+        ctx.lineTo(toX(k), toY(values[k]));
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 2.2;
+      ctx.lineJoin    = 'round';
+      ctx.lineCap     = 'round';
+      ctx.stroke();
+
+      // ---- Highlight the latest (rightmost) point ----
+      var lastX = toX(values.length - 1);
+      var lastY = toY(values[values.length - 1]);
+
+      // Outer coloured ring
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // White centre dot so it looks like a ring
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+    }
+
+    // ================================================================
+    // SECTION 6 — isMatched
+    //
+    // Decides whether the rule-based engine and the ML model agree.
+    // Same logic as dashboard.html comparison bar — keep in sync.
+    // ================================================================
+    function isMatched(ruleStatus, mainIssue, mlLabel) {
+      // Both say "all normal"
+      if (ruleStatus === 'Normal' && mlLabel === 'comfortable') return true;
+
+      // Map each ML label to the keyword in the rule engine's main_issue
+      var labelToKeyword = {
+        'too_hot':    'Temperature too high',
+        'too_cold':   'Temperature too low',
+        'too_humid':  'Humidity too high',
+        'too_dry':    'Humidity too low',
+        'too_dark':   'Light too low',
+        'too_bright': 'Light too high'
+      };
+
+      var keyword = labelToKeyword[mlLabel];
+      if (keyword && mainIssue && mainIssue.indexOf(keyword) !== -1) return true;
+      return false;
+    }
+
+    // ================================================================
+    // SECTION 7 — updateFromHistory
+    //
+    // Called every 2 s with the parsed JSON from GET /history?limit=40.
+    // Redraws the three line charts from the history rows.
+    // ================================================================
+    function updateFromHistory(data) {
+      var rows = (data && data.history) ? data.history : [];
+
+      if (rows.length === 0) {
+        // Nothing to draw yet — leave "Waiting for history data..." visible.
+        return;
+      }
+
+      // Pull out the three numeric arrays (already oldest-first from the server).
+      var temps  = rows.map(function(r) { return r.temperature; });
+      var hums   = rows.map(function(r) { return r.humidity;    });
+      var lights = rows.map(function(r) { return r.light;       });
+
+      drawChart('chart-temp',  'chart-temp-wait',  temps,  '#ff3b30');  // red
+      drawChart('chart-hum',   'chart-hum-wait',   hums,   '#007aff');  // blue
+      drawChart('chart-light', 'chart-light-wait', lights, '#ff9500');  // orange
+    }
+
+    // ================================================================
+    // SECTION 8 — updateFromLive
+    //
+    // Called every 2 s with the parsed JSON from GET /data.
+    // Updates the current-value numbers, status badge, LED matrix,
+    // and the ML prediction card.
+    // ================================================================
+    function updateFromLive(data) {
+      // ---- Parse the three sensor values ----
+      var temp  = parseFloat(data.temperature);
+      var hum   = parseFloat(data.humidity);
+      var light = parseFloat(data.light);
+
+      // ---- Current value numbers at the top of each chart card ----
+      document.getElementById('temp-value').textContent  =
+        isNaN(temp)  ? '—' : temp.toFixed(1);
+      document.getElementById('hum-value').textContent   =
+        isNaN(hum)   ? '—' : Math.round(hum);
+      document.getElementById('light-value').textContent =
+        isNaN(light) ? '—' : Math.round(light);
+
+      // ---- Page header status badge ----
+      var isLive = (data.data_source_status === 'Live sensor data');
+      var badge  = document.getElementById('status-badge');
+      badge.className = 'status-badge ' + (isLive ? 'live' : 'waiting');
+      document.getElementById('status-text').textContent = isLive ? 'Live' : 'Waiting';
+
+      // ---- LED Matrix ----
+      // getMatrixIconName reads humidity and light from the data object
+      // internally, so no separate NaN check needed here.
+      updateMatrix(getMatrixIconName(data));
+
+      // ---- ML Prediction card ----
+      // ML label badge (always purple).
+      var mlLabelEl = document.getElementById('ml-label');
+      mlLabelEl.textContent = data.ml_label || '—';
+      mlLabelEl.className   = 'badge ml';
+
+      // ML status badge (green = Normal, orange = Warning).
+      var mlStatusEl = document.getElementById('ml-status');
+      mlStatusEl.textContent = data.ml_status || '—';
+      mlStatusEl.className   =
+        'badge ' + (data.ml_status === 'Normal' ? 'normal' : 'warning');
+
+      // ML suggestion text.
+      document.getElementById('ml-suggestion').textContent =
+        data.ml_suggestion || '—';
+
+      // ---- Rule vs ML comparison strip ----
+      var strip = document.getElementById('compare-strip');
+
+      if (!data.ml_label || data.ml_label === '—' || data.ml_label === '—') {
+        // No ML data yet — neutral pending state.
+        strip.className   = 'compare-strip pending';
+        strip.textContent = 'Rule vs ML: Waiting...';
+      } else {
+        var matched = isMatched(data.status, data.main_issue, data.ml_label);
+        strip.className   = 'compare-strip ' + (matched ? 'match' : 'mismatch');
+        strip.textContent = matched
+          ? '✓ Rule vs ML: Matched'
+          : '✗ Rule vs ML: Different — check manually';
+      }
+    }
+
+    // ================================================================
+    // SECTION 9 — fetchAll
+    //
+    // Fetches both /data and /history in parallel.
+    // Called immediately on page load, then every 2 seconds.
+    // ================================================================
+    function fetchAll() {
+      // --- Fetch live current reading ---
+      fetch('/data')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { updateFromLive(data); })
+        .catch(function() {
+          // Server unreachable — update badge only, leave charts as-is.
+          var badge = document.getElementById('status-badge');
+          badge.className = 'status-badge waiting';
+          document.getElementById('status-text').textContent = 'Server unreachable';
+        });
+
+      // --- Fetch CSV history for the line charts ---
+      fetch('/history?limit=40')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { updateFromHistory(data); })
+        .catch(function() {
+          // If history fetch fails, charts simply keep showing "Waiting...".
+          // No crash, no fake data.
+        });
+    }
+
+    // ================================================================
+    // SECTION 10 — Initialise
+    // ================================================================
+
+    // Draw the default smile icon on page load before first data arrives.
+    updateMatrix('smile');
+
+    // First fetch runs immediately so the page feels instant.
+    fetchAll();
+
+    // Then repeat every 2 seconds (matches dashboard.html polling rate).
+    setInterval(fetchAll, 2000);
+
+  </script>
+</body>
+</html>

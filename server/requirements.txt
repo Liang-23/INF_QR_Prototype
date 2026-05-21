@@ -1,4 +1,8 @@
 flask
 pyserial
 qrcode[pil]
+pillow
 psutil
+joblib
+pandas
+scikit-learn

@@ -2,8 +2,10 @@
 # Flask server that reads JSON from Arduino over USB Serial,
 # stores the latest reading, and serves it to the phone dashboard.
 
+import csv
 import io
 import json
+import os
 import socket
 import threading
 import time
@@ -12,7 +14,7 @@ from datetime import datetime
 import psutil
 import qrcode
 import serial
-from flask import Flask, jsonify, redirect, render_template, send_file
+from flask import Flask, jsonify, redirect, render_template, request, send_file
 
 # Import the rule-based decision engine from the same folder.
 from decision_engine import analyze_environment
@@ -316,6 +318,149 @@ def refresh_qr():
     # Because /qr calls get_best_local_ipv4() fresh each time,
     # this always picks up the current network state.
     return redirect("/qr")
+
+
+# ---------------------------------------------------------
+# Data Trend page — visual IoT dashboard with charts
+# ---------------------------------------------------------
+
+@app.route("/trend")
+def trend_page():
+    # Old singular URL kept as a shortcut to the final trends page.
+    return redirect("/trends")
+
+
+@app.route("/trends")
+def trends_page():
+    # Render the final data-trends page (trends.html).
+    return render_template("trends.html")
+
+
+@app.route("/api/history")
+def api_history():
+    """
+    Return the last N rows from sensor_log.csv as a JSON array.
+    The trend page fetches this to draw line charts.
+
+    Query parameter:
+      ?n=60   (default 60, max 500)
+
+    Each element is a dict matching the CSV columns.
+    The list is sorted oldest-first so charts draw left-to-right.
+    """
+    # How many rows to return (default 60, cap at 500).
+    try:
+        n = min(int(request.args.get("n", 60)), 500)
+    except (ValueError, TypeError):
+        n = 60
+
+    # Path to the CSV file — same path used by data_logger.py.
+    log_file = os.path.join(os.path.dirname(__file__), "data", "sensor_log.csv")
+
+    # If the file does not exist yet, return an empty list.
+    if not os.path.isfile(log_file):
+        return jsonify([])
+
+    # Read the CSV into a list of dicts, then take the last N rows.
+    rows = []
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            # Keep only the last N rows in memory using a sliding window.
+            # For a small log this is fine; for huge files a deque would
+            # be more efficient, but simplicity wins here.
+            all_rows = list(reader)
+            rows = all_rows[-n:]
+    except Exception:
+        return jsonify([])
+
+    return jsonify(rows)
+
+
+# ---------------------------------------------------------
+# /history — clean JSON endpoint for the trend frontend
+# ---------------------------------------------------------
+
+@app.route("/history")
+def history():
+    """
+    Return the most recent rows from sensor_log.csv as a JSON object.
+
+    Query parameter:
+      ?limit=40   (default 40, max 500)
+
+    Response shape:
+      { "history": [ { timestamp, temperature, humidity, light, ... }, ... ] }
+
+    The list is sorted oldest-first so line charts draw left-to-right.
+    temperature, humidity, and light are converted to numbers.
+    Incomplete rows are skipped safely — Flask never crashes.
+    """
+    # ---- 1. Parse the ?limit query parameter ----
+    # Default to 40 rows.  Cap at 500 to avoid sending huge payloads.
+    try:
+        limit = min(int(request.args.get("limit", 40)), 500)
+    except (ValueError, TypeError):
+        limit = 40
+
+    # ---- 2. Build the path to the CSV file ----
+    # __file__ is app.py; the CSV lives one folder down in data/.
+    # This is the same path data_logger.py uses, so they always point
+    # to the same file even if Flask is started from a different directory.
+    log_file = os.path.join(os.path.dirname(__file__), "data", "sensor_log.csv")
+
+    # ---- 3. Return an empty history if the file does not exist yet ----
+    # The file is created on the first sensor reading, so it may not
+    # be there yet when the server first starts.
+    if not os.path.isfile(log_file):
+        return jsonify({"history": []})
+
+    # ---- 4. Read the CSV, take the last `limit` rows ----
+    rows = []
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            all_rows = list(reader)
+            # Slice the last N rows — already in chronological order.
+            raw_rows = all_rows[-limit:]
+
+        # ---- 5. Build clean dicts for the frontend ----
+        for raw in raw_rows:
+            try:
+                # Convert the three sensor columns to numbers.
+                # If a value is missing or not a number, default to 0.
+                temp  = float(raw.get("temperature", 0) or 0)
+                hum   = float(raw.get("humidity",    0) or 0)
+                light = float(raw.get("light",       0) or 0)
+
+                rows.append({
+                    # timestamp is used as the x-axis label on charts.
+                    "timestamp":    raw.get("timestamp",    ""),
+                    "temperature":  temp,
+                    "humidity":     hum,
+                    "light":        light,
+                    # Rule-based fields.
+                    "status":       raw.get("status",        ""),
+                    "main_issue":   raw.get("main_issue",    ""),
+                    "led_action":   raw.get("led_action",    ""),
+                    "comfort_level":raw.get("comfort_level", ""),
+                    # ML fields.
+                    "ml_label":     raw.get("ml_label",      ""),
+                    "ml_status":    raw.get("ml_status",     ""),
+                    "ml_suggestion":raw.get("ml_suggestion", ""),
+                })
+            except (ValueError, TypeError):
+                # Skip any row whose numeric fields are corrupt.
+                print("[History] Skipped a row with invalid numeric data.")
+                continue
+
+    except Exception as e:
+        # File locked, permission error, or any other unexpected problem.
+        # Print a clear warning and return an empty history so Flask keeps running.
+        print(f"[History] Warning: could not read sensor_log.csv — {e}")
+        return jsonify({"history": []})
+
+    return jsonify({"history": rows})
 
 
 # ---------------------------------------------------------
